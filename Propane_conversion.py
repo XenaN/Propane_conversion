@@ -23,7 +23,8 @@ import numpy as np
         po * Cp * (T - T0) = sum(Q * C0 * c)
         
     Отсюда находим температуру для экзотермической реакции
-        T = T0 - sum(Q * c0 * c)/(po * Cp)'''
+        T = T0 - sum(Q * c0 * c)/(po * Cp)
+'''
 
 
 def calculate_temperature(T0, q, c, P, Q0, Cp, Mr):
