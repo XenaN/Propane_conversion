@@ -7,68 +7,69 @@ import numpy as np
         P = 1                 - давление (атм)
    
    Другие переменные:
-        po = int              - плотность смеси (г/см3)
-        Cp = []               - теплоемкость i компонетов (кДж/моль*К)
-        Cp_mix = int          - теплоемкость смеси (Дж/моль*К)
+        n_i = np.ndarray(5,)  - мольные доли компонентов смеси
+        Cp = np.ndarray(5,)   - теплоемкость i компонетов (кДж/моль*К)
         T = int               - выходная температура (К)
-        Q = np.ndarray(2,)    - тепловой эффект реакции (кДж/моль)
-        Q0 = np.ndarray(2,)   - тепловой эффект реакции для стандартных условий(кДж/моль)
-        с0 = np.ndarray(2,)   - начальная концентрация пропана (моль/л)
-        Mr = np.ndarray(5,)   - молярная масса i компонетов (г/моль)
+        Q0_input = int        - энтальпия входящей смеси (кДж/моль)
+        Q0_output = int       - энтальпия выходящей смеси(кДж/моль)
+
 
    Считаем, что массивы np.ndarray(5,) передаются в виде:
    ([propane, propene, hydrogen, ethene, methane])
 
-   Основываясь на законе Гессе, напишем уравнение теплового баланса:
-        po * Cp * (T - T0) = sum(Q * C0 * c)
-        
-    Отсюда находим температуру для экзотермической реакции
-        T = T0 - sum(Q * c0 * c)/(po * Cp)
 '''
 
 
-def calculate_temperature(T0, q, c, P, Q0, Cp, Mr):
-    #Calculate enthalpy
-    T_standart = 298.15
-    Cp_initial = np.array([Cp[0], Cp[0]])                        # теплоемкость пропана
-    Cp_product = np.array([Cp[1] + Cp[2], Cp[3] + Cp[4]])        # теплоемкость продуктов
-    Q = Q0 + (Cp_initial - Cp_product) * (T0 - T_standart)
+def calculate_temperature(T0, q, c, Q0, a):
+    n_i = q / sum(q)                                               # Мольная доля i компонента по входящему потоку
+    Q0_input = Q0 * n_i
+    Q0_input = np.split(Q0_input, [1, 5])
+    Q0_input = sum(Q0_input[1]) - sum(2*Q0_input[0])               # Стандартная энтальпия входящей смеси
 
-    #calculate propane concentrate
-    R = 8.31                             # Дж / (моль*К)
-    P = P * 101325                       # Па
-    c0 = P / (R * T0)
+    a_input = np.zeros(a.shape)
+    Cp = np.array([0, 0, 0, 0, 0])
+    for i in range(0, len(a_input)):
+        for j in range(0, len(a_input[i])):
+            a_input[i][j] = a[i][j] * (T0 - 298.15)**(j+1)
 
-    #Calculate heat capacity
-    n_i = q / sum(q)                     # мольная доля i компонента
-    Cp_mix = sum(Cp * n_i)
+        Cp[i] = sum(a_input[i])
+    integrated_Cp_input = sum(Cp * n_i)                             # Теплоемкость входящей смеси
 
-    #Calculate density
-    Mr_mix = sum(Mr * n_i)
-    po = P * Mr_mix / (R * T0)           # г/м3 или кг/л
+    c = c / 100
+    q_1 = np.array([q[0] * (1 - c[0]), q[1] + q[0]*c[0],
+                    q[2] + q[0]*c[0], q[3], q[4]])                  # Мольный поток подуктов по первой реакции
+    q_1 = np.array([q_1[0] * (1 - c[1]), q_1[1], q_1[2],
+                    q_1[3] + q_1[0]*c[1], q_1[4] + q_1[0]*c[1]])    # Мольный поток подуктов по второй реакции
 
-    # Cp_mix из кДж/(моль*К) в кДж/(кг*К)
-    Cp_mix = Cp_mix * 1000 / Mr_mix
+    n_i = q_1 / sum(q_1)                                            # Мольная доля i компонента по выходящему потоку
 
-    #Calculate temperature
-    T = T0 - sum(Q * c0 * c) / (po * Cp_mix)
+    Q0_output = Q0 * n_i
+    Q0_output = np.split(Q0_output, [1, 5])
+    Q0_output = sum(Q0_output[1]) - sum(2*Q0_output[0])             # Стандартная энтальпия выходящей смеси
 
-    return T
+    a_poly_constant = a * n_i
+    a_poly_constant = np.sum(a_poly_constant, axis=0)
+    a_poly_constant = np.flip(a_poly_constant, axis=0)
+    a_poly_constant = np.append(a_poly_constant,
+                        (Q0_input+integrated_Cp_input-Q0_output)*(-1))
+    delta_T_poly = np.roots(a_poly_constant)                        # Находим корни полинома
+    T_poly = delta_T_poly[4].real + 298.15                          # и выбираем не вещественное число
+    return T_poly
 
 
 
-# Q0 считаем как разницу энтальпий образования исходных веществ и продуктов
-# 1 реакции Q0 = -103.85 - (20.41 + 0) = -124.26
-# 2 реакции Q0 = -103.85 - (-74.85 + 52.30) = -81.3
-Q0 = np.array([-124.26, -81.3])
 
-Mr = np.array([44.1, 42.08, 2.02, 28.05, 16.04])
-Cp = [0.0736, 0.0643, 0.0288, 0.0429, 0.03569]
-P = 1
 
-T0 = 350
-c = np.array([19, 25])
+Q0 = np.array([-103.85, 20.41, 0, 52.30, -74.85])
+a = np.array([[3.847, 5.131*10**(-3), 6.011*10**(-5), -7.793*10**(-8), 3.079*10**(-11)],
+             [3.834, 3.893*10**(-3), 4.688*10**(-5), -6.013*10**(-8), 2.283*10**(-11)],
+             [2.883, 3.681*10**(-3), -0.772*10**(-5), 0.692*10**(-8), -0.213*10**(-11)],
+             [4.221, -8.782*10**(-3), 5.795*10**(-5), -6.729*10**(-8), 2.511*10**(-11)],
+             [4.568, -8.975*10**(-3), 3.631*10**(-5), -3.407*10**(-8), 1.091*10**(-11)]])
+
+T0 = int(input())
+c = np.array([10, 10])
 q = np.array([35.3, 8.0, 11.5, 6.2, 7.1])
 
-result = calculate_temperature(T0, q, c, P, Q0, Cp, Mr)
+result = calculate_temperature(T0, q, c, Q0, a)
 print('Temperature: %.2f' % result)
