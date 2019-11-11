@@ -53,8 +53,8 @@ def calculate_temperature(T0, q, c, Q0, a):
     a_poly_constant = np.append(a_poly_constant,
                         (Q0_input+integrated_Cp_input-Q0_output)*(-1))
     delta_T_poly = np.roots(a_poly_constant)                        # Находим корни полинома
-    T_poly = delta_T_poly[4].real + 298.15                          # и выбираем не вещественное число
-    return T_poly
+    T = delta_T_poly[4].real + 298.15                               # и выбираем не вещественное число
+    return T
 
 
 
